@@ -77,7 +77,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="relative flex min-h-screen flex-col">
+      <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden">
         <div className="nl-scanline" aria-hidden />
         <SiteHeader />
         <main className="relative z-10 flex-1">

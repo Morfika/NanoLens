@@ -5,6 +5,18 @@ import { calibrationData } from "@/lib/calibration";
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis, Cell } from "recharts";
 import { Activity, Database, LineChart } from "lucide-react";
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
+  useEffect(() => {
+    const handler = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", handler, { passive: true });
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return width;
+}
+
 export const Route = createFileRoute("/calibration")({
   head: () => ({
     meta: [
@@ -35,23 +47,51 @@ function CustomTooltip({ active, payload }: any) {
 }
 
 function CalibrationChart() {
+  const width = useWindowWidth();
+  const isMobile = width < 640;
+
+  const chartMargin = isMobile
+    ? { top: 10, right: 30, bottom: 50, left: 0 }
+    : { top: 20, right: 30, bottom: 60, left: 60 };
+
+  const tickFontSize = isMobile ? 9 : 10;
+  const labelFontSize = isMobile ? 8 : 10;
+
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart margin={{ top: 20, right: 30, bottom: 60, left: 60 }}>
+      <ScatterChart margin={chartMargin}>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
         <XAxis
           type="number" dataKey="uvVisPeak" name="Pico UV-Vis" unit=" nm"
-          domain={[380, 480]} stroke="rgba(255,255,255,0.3)"
-          tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "monospace" }}
-          label={{ value: "RESONANCIA PLASMÓNICA (nm)", position: "insideBottom", offset: -25, fill: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "monospace", letterSpacing: "0.1em" }}
+          domain={[375, 485]} stroke="rgba(255,255,255,0.3)"
+          tick={{ fill: "rgba(255,255,255,0.5)", fontSize: tickFontSize, fontFamily: "monospace" }}
+          label={{
+            value: isMobile ? "λ resonancia (nm)" : "RESONANCIA PLASMÓNICA (nm)",
+            position: "insideBottom",
+            offset: isMobile ? -20 : -25,
+            fill: "rgba(255,255,255,0.5)",
+            fontSize: labelFontSize,
+            fontFamily: "monospace",
+            letterSpacing: "0.06em",
+          }}
         />
         <YAxis
           type="number" dataKey="ntaSize" name="Tamaño" unit=" nm"
           domain={[0, 100]} stroke="rgba(255,255,255,0.3)"
-          tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "monospace" }}
-          label={{ value: "DIÁMETRO NTA (nm)", angle: -90, position: "insideLeft", offset: 10, fill: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "monospace", letterSpacing: "0.1em" }}
+          width={isMobile ? 32 : 50}
+          tick={{ fill: "rgba(255,255,255,0.5)", fontSize: tickFontSize, fontFamily: "monospace" }}
+          label={isMobile ? undefined : {
+            value: "DIÁMETRO NTA (nm)",
+            angle: -90,
+            position: "insideLeft",
+            offset: 10,
+            fill: "rgba(255,255,255,0.5)",
+            fontSize: labelFontSize,
+            fontFamily: "monospace",
+            letterSpacing: "0.1em",
+          }}
         />
-        <ZAxis range={[300, 300]} />
+        <ZAxis range={[isMobile ? 180 : 300, isMobile ? 180 : 300]} />
         <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: "3 3", stroke: "rgba(255,255,255,0.2)" }} />
         <Scatter data={calibrationData}>
           {calibrationData.map((d) => (
@@ -69,7 +109,7 @@ function CalibrationPage() {
   useEffect(() => { setMounted(true); }, []);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12 sm:px-8 sm:py-16 relative">
+    <div className="mx-auto max-w-5xl px-4 py-12 sm:px-8 sm:py-16 relative overflow-x-hidden">
       <div className="absolute top-0 left-0 -z-10 h-[500px] w-[500px] opacity-20 nl-aurora" />
       
       <header className="mb-10 fade-in-up">

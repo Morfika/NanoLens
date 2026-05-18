@@ -55,9 +55,9 @@ function HomePage() {
   useEffect(() => { const t = setTimeout(() => setBootDone(true), 2200); return () => clearTimeout(t); }, []);
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-x-hidden">
       {/* GLOBAL PARTICLE FIELD — covers hero */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[120vh]">
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[120vh] overflow-hidden">
         <div className="absolute inset-0 overflow-hidden">
           <div className="nl-aurora" />
         </div>

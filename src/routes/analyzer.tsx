@@ -113,7 +113,7 @@ function AnalyzerPage() {
   }, [result]);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12 sm:px-8 sm:py-16 relative">
+    <div className="mx-auto max-w-5xl px-4 py-12 sm:px-8 sm:py-16 relative overflow-x-hidden">
       <div className="absolute top-0 right-0 -z-10 h-[500px] w-[500px] opacity-20 nl-aurora" />
       
       <header className="mb-10 text-center sm:text-left fade-in-up">
