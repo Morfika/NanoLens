@@ -158,8 +158,3 @@ function GuidePage() {
     </div>
   );
 }
-        </ul>
-      </Card>
-    </div>
-  );
-}
