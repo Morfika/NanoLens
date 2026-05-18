@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Upload, Camera, RefreshCw, FileDown, AlertTriangle, CheckCircle2, Info, Aperture, Activity, ScanLine } from "lucide-react";
+import { Upload, Camera, RefreshCw, FileDown, AlertTriangle, CheckCircle2, Info, Aperture, Activity, ScanLine, Atom } from "lucide-react";
 import { analyzePixels, type AnalysisResult } from "@/lib/colorAnalysis";
 
 export const Route = createFileRoute("/analyzer")({
