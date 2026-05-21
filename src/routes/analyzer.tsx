@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Upload, Camera, RefreshCw, FileDown, AlertTriangle, CheckCircle2, Info, Aperture, Activity, ScanLine, Atom } from "lucide-react";
+import { Upload, Camera, RefreshCw, FileDown, AlertTriangle, CheckCircle2, Info, Aperture, Activity, ScanLine, Atom, ZoomIn, ZoomOut, Hand, Crop } from "lucide-react";
 import { analyzePixels, type AnalysisResult } from "@/lib/colorAnalysis";
 
 export const Route = createFileRoute("/analyzer")({
@@ -28,6 +28,20 @@ function AnalyzerPage() {
   const imgRef = useRef<HTMLImageElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  // Zoom & Pan states
+  const [zoom, setZoom] = useState<number>(1);
+  const [panX, setPanX] = useState<number>(0);
+  const [panY, setPanY] = useState<number>(0);
+  const [tool, setTool] = useState<"crop" | "pan">("crop");
+
+  // Interaction tracking refs
+  const dragTypeRef = useRef<"draw" | "move" | "resize" | "pan" | null>(null);
+  const resizeHandleRef = useRef<"tl" | "tr" | "bl" | "br" | null>(null);
+  const startPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const startCropRef = useRef<CropRect | null>(null);
+  const startPanRef = useRef<{ x: number; y: number } | null>(null);
+  const startBaseRef = useRef<{ x: number; y: number } | null>(null);
+
   const onFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
     const reader = new FileReader();
@@ -35,6 +49,10 @@ function AnalyzerPage() {
       setImgSrc(e.target?.result as string);
       setCrop(null);
       setResult(null);
+      setZoom(1);
+      setPanX(0);
+      setPanY(0);
+      setTool("crop");
     };
     reader.readAsDataURL(file);
   }, []);
@@ -46,24 +64,169 @@ function AnalyzerPage() {
     if (f) onFile(f);
   };
 
-  // Cropping (mouse + touch)
-  const startRef = useRef<{ x: number; y: number } | null>(null);
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!overlayRef.current) return;
-    const rect = overlayRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    startRef.current = { x, y };
-    setCrop({ x, y, w: 0, h: 0 });
-    (e.target as Element).setPointerCapture(e.pointerId);
+  // Zoom adjustments with bound checking and viewport relative pan clamping
+  const adjustZoom = (factor: number | ((prev: number) => number)) => {
+    setZoom((prev) => {
+      let nextZoom = typeof factor === "function" ? factor(prev) : prev + factor;
+      nextZoom = Math.max(1, Math.min(4, Math.round(nextZoom * 10) / 10)); // Clamp zoom between 1x and 4x
+      
+      if (nextZoom === 1) {
+        setPanX(0);
+        setPanY(0);
+      } else if (overlayRef.current) {
+        const rect = overlayRef.current.getBoundingClientRect();
+        const minPanX = rect.width * (1 - nextZoom);
+        const minPanY = rect.height * (1 - nextZoom);
+        setPanX((px) => Math.max(minPanX, Math.min(0, px)));
+        setPanY((py) => Math.max(minPanY, Math.min(0, py)));
+      }
+      return nextZoom;
+    });
   };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!startRef.current || !overlayRef.current) return;
+
+  // Interactive drawing, moving, resizing and panning via unified PointerEvents
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!overlayRef.current || isScanning) return;
     const rect = overlayRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const sx = startRef.current.x, sy = startRef.current.y;
-    setCrop({ x: Math.min(sx, x), y: Math.min(sy, y), w: Math.abs(x - sx), h: Math.abs(y - sy) });
+    
+    // Viewport relative client coords
+    const vx = e.clientX - rect.left;
+    const vy = e.clientY - rect.top;
+    
+    // Convert to untransformed base container space
+    const x = Math.max(0, Math.min(rect.width, (vx - panX) / zoom));
+    const y = Math.max(0, Math.min(rect.height, (vy - panY) / zoom));
+
+    const target = e.target as HTMLElement;
+    const handle = target.getAttribute("data-handle") as "tl" | "tr" | "bl" | "br" | null;
+
+    if (handle) {
+      // 1. Resizing corner
+      dragTypeRef.current = "resize";
+      resizeHandleRef.current = handle;
+      startPointerRef.current = { x: e.clientX, y: e.clientY };
+      startCropRef.current = crop ? { ...crop } : null;
+    } else if (crop && x >= crop.x && x <= crop.x + crop.w && y >= crop.y && y <= crop.y + crop.h) {
+      // 2. Dragging/moving the entire crop box
+      dragTypeRef.current = "move";
+      startPointerRef.current = { x: e.clientX, y: e.clientY };
+      startCropRef.current = { ...crop };
+    } else if (tool === "pan" || e.button === 1 || e.shiftKey) {
+      // 3. Panning the viewport (either with Hand tool, middle mouse click, or shift key)
+      dragTypeRef.current = "pan";
+      startPointerRef.current = { x: e.clientX, y: e.clientY };
+      startPanRef.current = { x: panX, y: panY };
+    } else {
+      // 4. Drawing a new crop box
+      dragTypeRef.current = "draw";
+      startBaseRef.current = { x, y };
+      setCrop({ x, y, w: 0, h: 0 });
+    }
+    
+    target.setPointerCapture(e.pointerId);
   };
-  const onPointerUp = () => { startRef.current = null; };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragTypeRef.current || !overlayRef.current) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    
+    // Viewport relative client coords
+    const vx = e.clientX - rect.left;
+    const vy = e.clientY - rect.top;
+    
+    // Convert to untransformed base container space (with clamp)
+    const x = Math.max(0, Math.min(rect.width, (vx - panX) / zoom));
+    const y = Math.max(0, Math.min(rect.height, (vy - panY) / zoom));
+
+    if (dragTypeRef.current === "draw" && startBaseRef.current) {
+      const sx = startBaseRef.current.x;
+      const sy = startBaseRef.current.y;
+      setCrop({
+        x: Math.min(sx, x),
+        y: Math.min(sy, y),
+        w: Math.abs(x - sx),
+        h: Math.abs(y - sy)
+      });
+    } else if (dragTypeRef.current === "move" && startPointerRef.current && startCropRef.current) {
+      const dxClient = e.clientX - startPointerRef.current.x;
+      const dyClient = e.clientY - startPointerRef.current.y;
+      
+      // Convert client space delta to base space delta
+      const dx = dxClient / zoom;
+      const dy = dyClient / zoom;
+      
+      let newX = startCropRef.current.x + dx;
+      let newY = startCropRef.current.y + dy;
+      
+      // Clamp crop box position inside image boundaries
+      newX = Math.max(0, Math.min(rect.width - startCropRef.current.w, newX));
+      newY = Math.max(0, Math.min(rect.height - startCropRef.current.h, newY));
+      
+      setCrop({
+        ...startCropRef.current,
+        x: newX,
+        y: newY
+      });
+    } else if (dragTypeRef.current === "resize" && startPointerRef.current && startCropRef.current && resizeHandleRef.current) {
+      const dx = (e.clientX - startPointerRef.current.x) / zoom;
+      const dy = (e.clientY - startPointerRef.current.y) / zoom;
+      const handle = resizeHandleRef.current;
+      
+      const sc = startCropRef.current;
+      const minSize = 10; // Min crop box dimension
+
+      if (handle === "tl") {
+        const fixedX = sc.x + sc.w;
+        const fixedY = sc.y + sc.h;
+        const newX = Math.max(0, Math.min(fixedX - minSize, sc.x + dx));
+        const newY = Math.max(0, Math.min(fixedY - minSize, sc.y + dy));
+        setCrop({ x: newX, y: newY, w: fixedX - newX, h: fixedY - newY });
+      } else if (handle === "tr") {
+        const fixedX = sc.x;
+        const fixedY = sc.y + sc.h;
+        const newRight = Math.max(fixedX + minSize, Math.min(rect.width, sc.x + sc.w + dx));
+        const newY = Math.max(0, Math.min(fixedY - minSize, sc.y + dy));
+        setCrop({ x: fixedX, y: newY, w: newRight - fixedX, h: fixedY - newY });
+      } else if (handle === "bl") {
+        const fixedX = sc.x + sc.w;
+        const fixedY = sc.y;
+        const newX = Math.max(0, Math.min(fixedX - minSize, sc.x + dx));
+        const newBottom = Math.max(fixedY + minSize, Math.min(rect.height, sc.y + sc.h + dy));
+        setCrop({ x: newX, y: fixedY, w: fixedX - newX, h: newBottom - fixedY });
+      } else if (handle === "br") {
+        const fixedX = sc.x;
+        const fixedY = sc.y;
+        const newRight = Math.max(fixedX + minSize, Math.min(rect.width, sc.x + sc.w + dx));
+        const newBottom = Math.max(fixedY + minSize, Math.min(rect.height, sc.y + sc.h + dy));
+        setCrop({ x: fixedX, y: fixedY, w: newRight - fixedX, h: newBottom - fixedY });
+      }
+    } else if (dragTypeRef.current === "pan" && startPointerRef.current && startPanRef.current) {
+      const dx = e.clientX - startPointerRef.current.x;
+      const dy = e.clientY - startPointerRef.current.y;
+      
+      let newPanX = startPanRef.current.x + dx;
+      let newPanY = startPanRef.current.y + dy;
+      
+      // Clamp pan coordinate boundaries to keep image in viewport
+      const minPanX = rect.width * (1 - zoom);
+      const minPanY = rect.height * (1 - zoom);
+      newPanX = Math.max(minPanX, Math.min(0, newPanX));
+      newPanY = Math.max(minPanY, Math.min(0, newPanY));
+      
+      setPanX(newPanX);
+      setPanY(newPanY);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    (e.target as Element).releasePointerCapture(e.pointerId);
+    dragTypeRef.current = null;
+    resizeHandleRef.current = null;
+    startPointerRef.current = null;
+    startCropRef.current = null;
+    startPanRef.current = null;
+    startBaseRef.current = null;
+  };
 
   const analyze = useCallback(() => {
     if (!imgRef.current) return;
@@ -100,7 +263,16 @@ function AnalyzerPage() {
     }, 1500);
   }, [crop]);
 
-  const reset = () => { setImgSrc(null); setCrop(null); setResult(null); setIsScanning(false); };
+  const reset = () => {
+    setImgSrc(null);
+    setCrop(null);
+    setResult(null);
+    setIsScanning(false);
+    setZoom(1);
+    setPanX(0);
+    setPanY(0);
+    setTool("crop");
+  };
 
   const exportPDF = () => window.print();
 
@@ -182,28 +354,185 @@ function AnalyzerPage() {
             </div>
             
             <div className="p-4 relative">
+              {/* Premium Workspace Control Toolbar */}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 bg-secondary/30 backdrop-blur-md p-2 rounded-xl border border-border/50">
+                <div className="flex items-center gap-1.5 bg-black/30 p-1 rounded-lg border border-border/30">
+                  <Button
+                    size="sm"
+                    variant={tool === "crop" ? "default" : "ghost"}
+                    onClick={() => setTool("crop")}
+                    className={`h-8 px-2.5 text-xs gap-1.5 transition-all ${
+                      tool === "crop" 
+                        ? "bg-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.3)]" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title="Herramienta de Selección (Recorte)"
+                  >
+                    <Crop className="h-3.5 w-3.5" /> Selección
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={tool === "pan" ? "default" : "ghost"}
+                    onClick={() => setTool("pan")}
+                    className={`h-8 px-2.5 text-xs gap-1.5 transition-all ${
+                      tool === "pan" 
+                        ? "bg-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.3)]" 
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title="Herramienta de Mano (Desplazar lienzo)"
+                  >
+                    <Hand className="h-3.5 w-3.5" /> Mano
+                  </Button>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-black/30 p-1 rounded-lg border border-border/30">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => adjustZoom(-0.2)}
+                      disabled={zoom <= 1}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-all"
+                      title="Alejar Zoom"
+                    >
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </Button>
+                    
+                    <span className="text-xs font-mono font-bold w-12 text-center text-foreground select-none">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => adjustZoom(0.2)}
+                      disabled={zoom >= 4}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-all"
+                      title="Acercar Zoom"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setZoom(1); setPanX(0); setPanY(0); }}
+                    disabled={zoom === 1 && panX === 0 && panY === 0}
+                    className="h-8 text-xs border-border/50 bg-background/50 hover:bg-background disabled:opacity-40 transition-all"
+                    title="Restablecer escala 1:1"
+                  >
+                    1:1
+                  </Button>
+                </div>
+              </div>
+
+              {/* Viewport Viewport (overlayRef) */}
               <div
                 ref={overlayRef}
-                className="relative w-full select-none overflow-hidden rounded-xl border border-primary/20 bg-black touch-none cursor-crosshair shadow-inner"
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
+                className={`relative w-full select-none overflow-hidden rounded-xl border border-primary/20 bg-black touch-none shadow-inner transition-all duration-300 ${
+                  tool === "pan" 
+                    ? "cursor-grab active:cursor-grabbing" 
+                    : "cursor-crosshair"
+                }`}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
               >
-                {/* eslint-disable-next-line jsx-a11y/alt-text */}
-                <img ref={imgRef} src={imgSrc} className="block h-auto w-full opacity-90 transition-opacity" draggable={false} alt="Muestra cargada" />
+                {/* Inner transformed container containing image and crop handles */}
+                <div
+                  style={{
+                    transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                    transformOrigin: "0 0",
+                    width: "100%",
+                    position: "relative"
+                  }}
+                  className="transition-transform duration-75 ease-out"
+                >
+                  {/* eslint-disable-next-line jsx-a11y/alt-text */}
+                  <img 
+                    ref={imgRef} 
+                    src={imgSrc} 
+                    className="block h-auto w-full opacity-90 transition-opacity" 
+                    draggable={false} 
+                    alt="Muestra cargada" 
+                  />
+                  
+                  {crop && crop.w > 0 && crop.h > 0 && (
+                    <div
+                      className="absolute border border-primary bg-primary/20 backdrop-blur-[1px] nl-sweep"
+                      style={{ 
+                        left: crop.x, 
+                        top: crop.y, 
+                        width: crop.w, 
+                        height: crop.h,
+                        borderWidth: `${1 / zoom}px` 
+                      }}
+                    >
+                      {/* Interactive Drag Handles - adaptively scaled based on zoom level */}
+                      <div
+                        data-handle="tl"
+                        className="absolute bg-primary border border-background rounded-full hover:scale-125 transition-transform cursor-nwse-resize"
+                        style={{
+                          left: 0,
+                          top: 0,
+                          width: `${12 / zoom}px`,
+                          height: `${12 / zoom}px`,
+                          transform: `translate(-50%, -50%)`,
+                          borderWidth: `${1 / zoom}px`
+                        }}
+                        title="Arrastrar esquina superior izquierda"
+                      />
+                      <div
+                        data-handle="tr"
+                        className="absolute bg-primary border border-background rounded-full hover:scale-125 transition-transform cursor-nesw-resize"
+                        style={{
+                          right: 0,
+                          top: 0,
+                          width: `${12 / zoom}px`,
+                          height: `${12 / zoom}px`,
+                          transform: `translate(50%, -50%)`,
+                          borderWidth: `${1 / zoom}px`
+                        }}
+                        title="Arrastrar esquina superior derecha"
+                      />
+                      <div
+                        data-handle="bl"
+                        className="absolute bg-primary border border-background rounded-full hover:scale-125 transition-transform cursor-nesw-resize"
+                        style={{
+                          left: 0,
+                          bottom: 0,
+                          width: `${12 / zoom}px`,
+                          height: `${12 / zoom}px`,
+                          transform: `translate(-50%, 50%)`,
+                          borderWidth: `${1 / zoom}px`
+                        }}
+                        title="Arrastrar esquina inferior izquierda"
+                      />
+                      <div
+                        data-handle="br"
+                        className="absolute bg-primary border border-background rounded-full hover:scale-125 transition-transform cursor-nwse-resize"
+                        style={{
+                          right: 0,
+                          bottom: 0,
+                          width: `${12 / zoom}px`,
+                          height: `${12 / zoom}px`,
+                          transform: `translate(50%, 50%)`,
+                          borderWidth: `${1 / zoom}px`
+                        }}
+                        title="Arrastrar esquina inferior derecha"
+                      />
+
+                      {/* Precise corner markers */}
+                      <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-primary pointer-events-none" style={{ borderWidth: `${2 / zoom}px` }} />
+                      <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-primary pointer-events-none" style={{ borderWidth: `${2 / zoom}px` }} />
+                      <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-primary pointer-events-none" style={{ borderWidth: `${2 / zoom}px` }} />
+                      <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-primary pointer-events-none" style={{ borderWidth: `${2 / zoom}px` }} />
+                    </div>
+                  )}
+                </div>
                 
-                {crop && crop.w > 0 && crop.h > 0 && (
-                  <div
-                    className="absolute border border-primary bg-primary/20 backdrop-blur-[1px] nl-sweep"
-                    style={{ left: crop.x, top: crop.y, width: crop.w, height: crop.h }}
-                  >
-                    <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-primary" />
-                    <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-primary" />
-                    <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-primary" />
-                    <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-primary" />
-                  </div>
-                )}
-                
+                {/* Fixed Overlay Scan Line (stays steady as canvas zooms/pans behind it) */}
                 {isScanning && (
                   <div className="absolute inset-0 pointer-events-none z-20">
                     <div className="absolute inset-0 bg-primary/10" />
@@ -259,8 +588,9 @@ function confidenceBadge(c: AnalysisResult["confidence"]) {
 
 function ResultsPanel({ result, onReset, onExport }: { result: AnalysisResult; onReset: () => void; onExport: () => void }) {
   const cb = confidenceBadge(result.confidence);
-  const midSize = (result.sizeRange.min + result.sizeRange.max) / 2;
-  const gaugePct = Math.min(100, Math.max(0, (midSize / 100) * 100));
+  // Use precise spline diameter if available, fallback to midpoint of range
+  const displayDiameter = result.estimatedDiameter || (result.sizeRange.min + result.sizeRange.max) / 2;
+  const gaugePct = Math.min(100, Math.max(0, (displayDiameter / 100) * 100));
   
   return (
     <Card className="fade-in-up nl-card relative overflow-hidden">
@@ -307,21 +637,94 @@ function ResultsPanel({ result, onReset, onExport }: { result: AnalysisResult; o
           </div>
         </div>
 
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-2 opacity-20 group-hover:opacity-100 transition-opacity">
-            <Atom className="w-12 h-12 text-primary nl-spin-slow" />
+        {/* 2-Column Telemetry Grid: Wavelength vs Cubic Spline Diameter */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Plasmon Resonance */}
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-2 opacity-15 group-hover:opacity-60 transition-opacity">
+              <Atom className="w-10 h-10 text-primary nl-spin-slow" />
+            </div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/80 mb-1 flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+              Resonancia de Plasmón
+            </div>
+            <div className="text-3xl font-bold text-foreground font-display flex items-baseline gap-1 shadow-primary drop-shadow-[0_0_15px_rgba(var(--primary),0.5)]">
+              {result.estimatedWavelength} <span className="text-sm text-primary/70 font-sans font-normal">nm</span>
+            </div>
+            <div className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
+              Estimación inferida por correlación espectral UV-Vis.
+            </div>
           </div>
-          <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/80 mb-1 flex items-center gap-2">
-            <div className="w-1 h-1 bg-primary rounded-full" />
-            Resonancia de Plasmón
-          </div>
-          <div className="text-4xl font-bold text-foreground font-display flex items-baseline gap-1 shadow-primary drop-shadow-[0_0_15px_rgba(var(--primary),0.5)]">
-            {result.estimatedWavelength} <span className="text-lg text-primary/70 font-sans font-normal">nm</span>
-          </div>
-          <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed max-w-[85%]">
-            Estimación inferida algorítmicamente basada en correlación espectral UV-Vis.
+
+          {/* Spline Cubic Diameter */}
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-2 opacity-15 group-hover:opacity-60 transition-opacity">
+              <Activity className="w-10 h-10 text-primary nl-pulse" />
+            </div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary/80 mb-1 flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 bg-primary rounded-full" />
+              Diámetro por Spline
+            </div>
+            <div className="text-3xl font-bold text-foreground font-display flex items-baseline gap-1 shadow-primary drop-shadow-[0_0_15px_rgba(var(--primary),0.5)]">
+              {result.estimatedDiameter > 0 ? result.estimatedDiameter.toFixed(1) : "—"} <span className="text-sm text-primary/70 font-sans font-normal">nm</span>
+            </div>
+            <div className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
+              Búsqueda inversa de alta precisión en la curva spline calibrada.
+            </div>
           </div>
         </div>
+
+        {/* Colorimetry Spline Match Comparison */}
+        {result.estimatedDiameter > 0 && (
+          <div className="bg-black/30 border border-border/40 p-4 rounded-xl space-y-3">
+            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground flex items-center justify-between">
+              <span>Comparación de Ajuste Spline Cúbico</span>
+              <span className="font-bold text-foreground font-sans">Métrico error</span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3 items-center">
+              {/* Real Measured Color */}
+              <div className="flex flex-col items-center gap-2 bg-secondary/15 p-2.5 rounded-lg border border-border/15">
+                <div 
+                  className="w-full h-10 rounded-md border border-white/10 shadow-inner relative overflow-hidden" 
+                  style={{ background: result.hex }}
+                >
+                  <div className="absolute inset-0 shadow-[inset_0_0_8px_rgba(0,0,0,0.4)]" />
+                </div>
+                <span className="text-[9px] font-mono text-muted-foreground uppercase">Color Medido</span>
+                <span className="text-[11px] font-bold text-foreground font-mono">{result.hex}</span>
+              </div>
+
+              {/* Reconstructed Spline Color */}
+              <div className="flex flex-col items-center gap-2 bg-secondary/15 p-2.5 rounded-lg border border-border/15">
+                <div 
+                  className="w-full h-10 rounded-md border border-white/10 shadow-inner relative overflow-hidden" 
+                  style={{ background: result.splineHex }}
+                >
+                  <div className="absolute inset-0 shadow-[inset_0_0_8px_rgba(0,0,0,0.4)]" />
+                </div>
+                <span className="text-[9px] font-mono text-muted-foreground uppercase">Color Spline</span>
+                <span className="text-[11px] font-bold text-foreground font-mono">{result.splineHex}</span>
+              </div>
+            </div>
+            
+            <div className="text-[10px] text-center font-mono">
+              {result.splineDistance < 15 ? (
+                <span className="text-emerald-400 flex items-center justify-center gap-1 bg-emerald-500/10 py-1 rounded-md border border-emerald-500/20">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Ajuste del modelo: Excelente (Err: {result.splineDistance.toFixed(1)})
+                </span>
+              ) : result.splineDistance < 35 ? (
+                <span className="text-amber-400 flex items-center justify-center gap-1 bg-amber-500/10 py-1 rounded-md border border-amber-500/20">
+                  <Info className="h-3.5 w-3.5" /> Ajuste del modelo: Aceptable (Err: {result.splineDistance.toFixed(1)})
+                </span>
+              ) : (
+                <span className="text-rose-400 flex items-center justify-center gap-1 bg-rose-500/10 py-1 rounded-md border border-rose-500/20 animate-pulse">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Desviación alta del calibrador (Err: {result.splineDistance.toFixed(1)})
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="mb-3 flex items-end justify-between">

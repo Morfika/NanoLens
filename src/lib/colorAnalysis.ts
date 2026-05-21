@@ -1,4 +1,5 @@
 import { sizeRanges, calibrationData } from "./calibration";
+import { estimateDiameterFromHSV } from "./splineUtils";
 
 export interface RGB { r: number; g: number; b: number }
 export interface HSV { h: number; s: number; v: number }
@@ -30,6 +31,9 @@ export interface AnalysisResult {
   hsv: HSV;
   hex: string;
   estimatedWavelength: number; // nm
+  estimatedDiameter: number; // nm
+  splineHex: string; // Hex color reconstructed by spline at estimated diameter
+  splineDistance: number; // Distance metric of spline fit quality
   sizeRange: { label: string; min: number; max: number; description: string };
   confidence: "alta" | "media" | "baja";
   warnings: string[];
@@ -65,6 +69,9 @@ export function analyzePixels(pixels: Uint8ClampedArray): AnalysisResult {
     return {
       rgb: { r: 0, g: 0, b: 0 }, hsv: { h: 0, s: 0, v: 0 }, hex: "#000000",
       estimatedWavelength: 0,
+      estimatedDiameter: 0,
+      splineHex: "#000000",
+      splineDistance: 0,
       sizeRange: { label: "No estimable", min: 0, max: 0, description: "No se detectó suficiente color útil." },
       confidence: "baja",
       warnings: ["No se detectaron suficientes píxeles válidos. Asegúrate de seleccionar la zona coloreada de la solución."],
@@ -107,6 +114,14 @@ export function analyzePixels(pixels: Uint8ClampedArray): AnalysisResult {
   const t = (65 - hClamped) / 75; // 0..1
   const estimatedWavelength = Math.round(392 + t * (470 - 392));
 
+  // Cubic spline inverse estimation
+  // hsv.s is 0..1, hsv.v is 0..1. Multiply by 100 to match SPLINE_RAW range (0..100)
+  const splineResult = estimateDiameterFromHSV(hsv.h, hsv.s * 100, hsv.v * 100);
+  
+  if (splineResult.distance > 35) {
+    warnings.push("La coloración de la muestra difiere significativamente del perfil de calibración spline. La estimación del diámetro podría tener mayor incertidumbre.");
+  }
+
   let confidence: "alta" | "media" | "baja" = "alta";
   if (outOfRange) confidence = "baja";
   else if (hsv.s < 0.45 || warnings.length >= 2) confidence = "media";
@@ -115,6 +130,9 @@ export function analyzePixels(pixels: Uint8ClampedArray): AnalysisResult {
   return {
     rgb, hsv, hex,
     estimatedWavelength,
+    estimatedDiameter: splineResult.estimatedDiameter,
+    splineHex: splineResult.splineHex,
+    splineDistance: splineResult.distance,
     sizeRange: { label: range.label, min: range.min, max: range.max, description: range.description },
     confidence,
     warnings,
