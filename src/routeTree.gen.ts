@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SlidesRouteImport } from './routes/slides'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as GuideRouteImport } from './routes/guide'
 import { Route as CalibrationRouteImport } from './routes/calibration'
@@ -16,6 +17,11 @@ import { Route as AnalyzerRouteImport } from './routes/analyzer'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SlidesRoute = SlidesRouteImport.update({
+  id: '/slides',
+  path: '/slides',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/calibration': typeof CalibrationRoute
   '/guide': typeof GuideRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/slides': typeof SlidesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/calibration': typeof CalibrationRoute
   '/guide': typeof GuideRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/slides': typeof SlidesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/calibration': typeof CalibrationRoute
   '/guide': typeof GuideRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/slides': typeof SlidesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,8 +90,16 @@ export interface FileRouteTypes {
     | '/calibration'
     | '/guide'
     | '/sitemap.xml'
+    | '/slides'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/analyzer' | '/calibration' | '/guide' | '/sitemap.xml'
+  to:
+    | '/'
+    | '/about'
+    | '/analyzer'
+    | '/calibration'
+    | '/guide'
+    | '/sitemap.xml'
+    | '/slides'
   id:
     | '__root__'
     | '/'
@@ -91,6 +108,7 @@ export interface FileRouteTypes {
     | '/calibration'
     | '/guide'
     | '/sitemap.xml'
+    | '/slides'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -100,10 +118,18 @@ export interface RootRouteChildren {
   CalibrationRoute: typeof CalibrationRoute
   GuideRoute: typeof GuideRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  SlidesRoute: typeof SlidesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/slides': {
+      id: '/slides'
+      path: '/slides'
+      fullPath: '/slides'
+      preLoaderRoute: typeof SlidesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sitemap.xml': {
       id: '/sitemap.xml'
       path: '/sitemap.xml'
@@ -156,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   CalibrationRoute: CalibrationRoute,
   GuideRoute: GuideRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  SlidesRoute: SlidesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

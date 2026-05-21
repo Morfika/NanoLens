@@ -55,7 +55,7 @@ function AboutPage() {
             <div>
               <h2 className="text-xl font-bold text-foreground font-mono uppercase tracking-widest mb-3">Protocolo de Síntesis</h2>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                El dataset de calibración se generó mediante reducción química de AgNO₃ con citrato de sodio (protocolo de Turkevich iterativo), modulando la concentración del agente reductor para aislar distribuciones paramétricas en el rango 10–90 nm. Variables de caracterización in-vitro:
+                El dataset de calibración se generó mediante reducción química de AgNO₃ con borohidruro de sodio ($NaBH_4$), modulando de forma controlada la temperatura (fría con hielo, ambiente y caliente a 60°C/90°C), velocidad de agitación (1500, 750 y 370 RPM), velocidad de goteo (1-2 gotas/s) y exposición a la luz, variando además la molaridad y cantidad de los reactivos en pos de aislar diferentes colores en el rango 20–83 nm. El spline de NanoLens se calibra principalmente en base a NTA (Nanoparticle Tracking Analysis) en lugar de picos de absorbancia. Variables de caracterización in-vitro:
               </p>
               <ul className="space-y-2 text-sm font-mono text-muted-foreground/80">
                 <li className="flex items-center gap-3">
@@ -64,7 +64,7 @@ function AboutPage() {
                 </li>
                 <li className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                  <span>Telemetría <strong className="text-primary/90">NTA Zetasizer</strong> para mapeo hidrodinámico.</span>
+                  <span>Telemetría <strong className="text-primary/90">NTA (Nanoparticle Tracking Analysis)</strong> para mapeo exacto de la distribución de tamaño.</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
