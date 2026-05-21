@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Camera, Sparkles, Activity, ChevronDown, ScanLine, ShieldCheck, Zap, FlaskConical, Atom } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { calibrationData } from "@/lib/calibration";
+import { SPLINE_RAW as RAW } from "@/lib/splineUtils";
 import { NanoParticleField } from "@/components/NanoParticleField";
 import { motion, useScroll, useTransform, useSpring, useMotionValue, animate } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
@@ -153,7 +153,7 @@ function HomePage() {
                 className="mt-12 grid grid-cols-3 gap-4 border-t border-border pt-6"
               >
                 {[
-                  { v: 6, suf: "", label: "Pts calibración", icon: FlaskConical },
+                  { v: RAW.length, suf: "", label: "Pts calibración", icon: FlaskConical },
                   { v: 0.8, suf: "s", label: "Tiempo análisis", icon: Zap },
                   { v: 100, suf: "%", label: "En tu navegador", icon: ShieldCheck },
                 ].map((s, i) => (
@@ -200,10 +200,10 @@ function HomePage() {
         <div className="flex overflow-hidden">
           <div className="nl-marquee flex shrink-0 gap-12 pr-12 font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
             {[...Array(2)].flatMap((_, k) =>
-              calibrationData.map((c) => (
+              RAW.map((c) => (
                 <span key={`${k}-${c.id}`} className="inline-flex items-center gap-3 whitespace-nowrap">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.hex, boxShadow: `0 0 12px ${c.hex}` }} />
-                  λ {c.uvVisPeak}nm · {c.ntaSize}nm · {c.colorName}
+                  Muestra #{c.id} · {c.nm.toFixed(2)} nm · HSV({Math.round(c.H)}°, {Math.round(c.S)}%, {Math.round(c.V)}%)
                   <span className="text-primary">◆</span>
                 </span>
               ))
@@ -306,17 +306,43 @@ function OrbitingSphere() {
           style={{ transform: `rotateX(70deg) rotateZ(${tilt}deg)`, transformStyle: "preserve-3d" }}
         >
           <div className={`absolute inset-0 ${i % 2 === 0 ? "nl-orbit" : "nl-orbit-rev"}`}>
-            {calibrationData.slice(i * 2, i * 2 + 2).map((c, j) => (
-              <div
-                key={c.id}
-                className="absolute left-1/2 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full"
-                style={{
-                  background: c.hex,
-                  boxShadow: `0 0 24px 4px ${c.hex}`,
-                  transform: `translateX(-50%) translateY(-50%) rotate(${j * 180}deg) translateY(0)`,
-                }}
-              />
-            ))}
+            {i === 0 ? (
+              RAW.slice(0, 3).map((c, j) => (
+                <div
+                  key={c.id}
+                  className="absolute left-1/2 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                  style={{
+                    background: c.hex,
+                    boxShadow: `0 0 24px 4px ${c.hex}`,
+                    transform: `translateX(-50%) translateY(-50%) rotate(${j * 120}deg) translateY(0)`,
+                  }}
+                />
+              ))
+            ) : i === 1 ? (
+              RAW.slice(3, 5).map((c, j) => (
+                <div
+                  key={c.id}
+                  className="absolute left-1/2 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                  style={{
+                    background: c.hex,
+                    boxShadow: `0 0 24px 4px ${c.hex}`,
+                    transform: `translateX(-50%) translateY(-50%) rotate(${j * 180}deg) translateY(0)`,
+                  }}
+                />
+              ))
+            ) : (
+              RAW.slice(5, 7).map((c, j) => (
+                <div
+                  key={c.id}
+                  className="absolute left-1/2 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                  style={{
+                    background: c.hex,
+                    boxShadow: `0 0 24px 4px ${c.hex}`,
+                    transform: `translateX(-50%) translateY(-50%) rotate(${j * 180}deg) translateY(0)`,
+                  }}
+                />
+              ))
+            )}
           </div>
         </div>
       ))}
@@ -327,7 +353,7 @@ function OrbitingSphere() {
         transition={{ scale: { duration: 3.2, repeat: Infinity, ease: "easeInOut" }, rotate: { duration: 40, repeat: Infinity, ease: "linear" } }}
         className="absolute left-1/2 top-1/2 flex h-44 w-44 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full"
         style={{
-          background: "radial-gradient(circle at 30% 30%, oklch(0.95 0.05 230), oklch(0.55 0.20 235) 50%, oklch(0.25 0.10 260) 100%)",
+          background: "radial-gradient(circle at 30% 30%, oklch(0.95 0.05 230), oklch(0.55 0.20 235 50%, oklch(0.25 0.10 260) 100%)",
           boxShadow: "0 0 80px -10px oklch(0.72 0.18 235), inset 0 0 60px oklch(0.30 0.10 260 / 0.6)",
         }}
       >
@@ -335,8 +361,8 @@ function OrbitingSphere() {
       </motion.div>
 
       {/* Floating data badges */}
-      {calibrationData.map((c, i) => {
-        const angle = (i / calibrationData.length) * Math.PI * 2;
+      {RAW.map((c, i) => {
+        const angle = (i / RAW.length) * Math.PI * 2;
         const radius = 48; // %
         const left = 50 + Math.cos(angle) * radius;
         const top = 50 + Math.sin(angle) * radius;
@@ -350,7 +376,7 @@ function OrbitingSphere() {
             style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${i * 0.5}s` }}
           >
             <span className="h-2 w-2 rounded-full" style={{ background: c.hex, boxShadow: `0 0 10px ${c.hex}` }} />
-            {c.ntaSize}nm
+            {c.nm.toFixed(1)}nm
           </motion.div>
         );
       })}

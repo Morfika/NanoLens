@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Sun, Camera, FlaskConical, Eye, AlertTriangle, BookOpen, Fingerprint } from "lucide-react";
-import { sizeRanges, calibrationData } from "@/lib/calibration";
+import { SPLINE_RAW as RAW } from "@/lib/splineUtils";
 
 export const Route = createFileRoute("/guide")({
   head: () => ({
@@ -19,6 +19,44 @@ const steps = [
   { icon: FlaskConical, title: "Homogeneidad", text: "Vibración mecánica suave del vial previa a captura. Asegura dispersión coloidal uniforme y evita agregados en el fondo." },
   { icon: Camera, title: "Enfoque Macroscópico", text: "Contraste con fondo blanco puro. Estabilización óptica estricta. Minimizar refracciones y reflejos sobre el cuarzo/vidrio." },
   { icon: Eye, title: "Encuadre Espectral", text: "Maximizar área de muestreo de la solución. Excluir menisco, burbujas e interferencias de la celda en el análisis." },
+];
+
+const REFERENCE_MATRIX = [
+  {
+    id: "M5",
+    description: "Plateado translúcido · Nanopartículas muy pequeñas, monodispersas. Absorción ultravioleta dominante, pico LSPR inicial.",
+    warning: null
+  },
+  {
+    id: "M4",
+    description: "Gris-arena · Crecimiento coloidal primario. Dispersión lumínica mínima, alta estabilidad en suspensión acuosa.",
+    warning: null
+  },
+  {
+    id: "M1",
+    description: "Arena-dorado claro · Activación del plasmón de resonancia superficial (LSPR). Estado intermedio de alta reflectividad.",
+    warning: null
+  },
+  {
+    id: "M2",
+    description: "Dorado brillante / Amarillo · Máxima resonancia plasmónica esférica. Máximo pico de absorción en ~400 nm.",
+    warning: null
+  },
+  {
+    id: "M3",
+    description: "Bronce-dorado · Desplazamiento al rojo (redshift) debido al incremento de diámetro modal de las AgNPs.",
+    warning: null
+  },
+  {
+    id: "M6",
+    description: "Café-bronce opaco · Partículas medianas/grandes. Incremento de la dispersión de Mie por encima de la absorción.",
+    warning: "Sensibilidad a polidispersidad"
+  },
+  {
+    id: "M7",
+    description: "Café-grisáceo oscuro · Límite superior de tamaño. Fuerte agregación coloidal o crecimiento descontrolado.",
+    warning: "Alta probabilidad de agregación"
+  }
 ];
 
 function GuidePage() {
@@ -65,33 +103,49 @@ function GuidePage() {
           Matriz de Referencia Óptica
         </h2>
         <p className="mt-1 text-sm text-muted-foreground border-l-2 border-primary/30 pl-3">
-          Verificación cruzada manual. Comparativa de firmas espectrales frente a tamaños calibrados.
+          Verificación cruzada manual. Comparación de firmas espectrales frente a las 7 muestras de calibración reales de AgNPs.
         </p>
         
-        <Card className="mt-5 overflow-hidden nl-card border-border/50">
-          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/20">
-            {sizeRanges.map((r, i) => {
-              const cal = calibrationData[i] ?? calibrationData[calibrationData.length - 1];
-              return (
-                <div key={r.label} className="flex items-center gap-4 p-5 hover:bg-white/[0.02] transition-colors border-b border-border/20">
-                  <div className="relative">
-                    <div className="h-16 w-16 flex-shrink-0 rounded-lg border-2 border-white/10 shadow-[inset_0_0_10px_rgba(0,0,0,0.8)]" style={{ background: cal.hex }} />
-                    <div className="absolute -bottom-2 -right-2 text-[9px] font-mono bg-black/80 text-muted-foreground border border-border/50 px-1 rounded backdrop-blur-sm">{cal.hex}</div>
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {RAW.map((d) => {
+            const refInfo = REFERENCE_MATRIX.find(r => r.id === d.id);
+            return (
+              <div 
+                key={d.id} 
+                className="flex items-center gap-4 p-5 rounded-xl border border-border/40 bg-black/30 backdrop-blur-md hover:border-primary/30 hover:bg-secondary/10 transition-all duration-300 relative group overflow-hidden"
+              >
+                <div 
+                  className="absolute -inset-1 opacity-0 group-hover:opacity-100 bg-gradient-to-r from-primary/5 to-transparent blur-xl transition-opacity duration-500 pointer-events-none" 
+                  style={{ '--tw-gradient-from': `${d.hex}15` } as React.CSSProperties}
+                />
+                <div className="relative flex-shrink-0">
+                  <div className="h-16 w-16 rounded-xl border border-white/20 shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-transform duration-300 group-hover:scale-105 relative overflow-hidden" style={{ background: d.hex }}>
+                    <div className="absolute inset-0 shadow-[inset_0_0_8px_rgba(0,0,0,0.4)]" />
                   </div>
-                  <div>
-                    <div className="text-sm font-bold text-foreground font-mono">{r.label}</div>
-                    <div className="text-xs text-muted-foreground mt-1">{r.description}</div>
-                    {r.warning && (
-                      <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-mono text-warning bg-warning/10 border border-warning/20 px-2 py-0.5 rounded">
-                        <AlertTriangle className="h-3 w-3" /> {r.warning}
-                      </div>
-                    )}
-                  </div>
+                  <div className="absolute -bottom-1.5 -right-1.5 text-[8px] font-mono bg-black/80 text-muted-foreground border border-border/50 px-1 rounded backdrop-blur-sm font-bold uppercase tracking-wider">{d.hex}</div>
                 </div>
-              );
-            })}
-          </div>
-        </Card>
+                <div className="relative z-10 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-mono bg-primary/10 border border-primary/20 text-primary px-1.5 py-0.5 rounded font-bold">
+                      Muestra #{d.id}
+                    </span>
+                    <span className="text-sm font-bold text-foreground font-mono select-none">
+                      {d.nm.toFixed(2)} <span className="text-[10px] text-muted-foreground font-normal">nm</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                    {refInfo?.description}
+                  </p>
+                  {refInfo?.warning && (
+                    <div className="mt-2.5 inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-mono text-warning bg-warning/10 border border-warning/20 px-2 py-0.5 rounded">
+                      <AlertTriangle className="h-3 w-3" /> {refInfo.warning}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="mt-16 fade-in-up-delay-3">
